@@ -11,7 +11,7 @@ import markdown
 
 SITE = Path(__file__).resolve().parent
 OUT = SITE / "dist"
-REPORTS = Path.home() / "Desktop/tradingroom-digest/exports/daily/digests"
+REPORTS = Path.home() / "Automation/tradingroom-digest/exports/daily/digests"
 WIKI = Path.home() / ".openclaw/wiki/main"
 
 NAV = [("/", "首页"), ("/research/", "研究"), ("/privacy", "隐私")]
