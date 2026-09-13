@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vvwbot-site",
+  "account_id": "51bf08a0d84d3ca830e91606916885aa",
+  "compatibility_date": "2026-09-11",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "dist"
+  },
+  "routes": [
+    { "pattern": "vvwbot.com", "custom_domain": true, "zone_name": "vvwbot.com" },
+    { "pattern": "www.vvwbot.com", "custom_domain": true, "zone_name": "vvwbot.com" }
+  ]
+}
