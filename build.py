@@ -123,9 +123,14 @@ def doc_page(title, lede, body_html, *, back=None, eyebrow=""):
 </main>"""
 
 
-TRADINGROOM_FNAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\.(day|night))?\.md$")
-SESSION_TITLE = {"day": "日盘（06:00–18:00）", "night": "夜盘（18:00–次日06:00）"}
-SESSION_ORDER = {"day": 0, "night": 1, None: -1}
+TRADINGROOM_FNAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\.(morning|afternoon|night|day))?\.md$")
+SESSION_TITLE = {
+    "morning": "上午盘（06:00–12:00）",
+    "afternoon": "下午盘（12:00–18:00）",
+    "night": "夜盘（18:00–次日06:00）",
+    "day": "日盘（06:00–18:00，旧格式）",
+}
+SESSION_ORDER = {"morning": 0, "afternoon": 1, "night": 2, "day": 0, None: -1}
 
 
 def _chapter_summary(raw):
