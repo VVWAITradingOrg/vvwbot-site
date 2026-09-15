@@ -3,6 +3,7 @@
 
 import datetime
 import html
+import json
 import re
 import shutil
 from pathlib import Path
@@ -12,6 +13,7 @@ import markdown
 SITE = Path(__file__).resolve().parent
 OUT = SITE / "dist"
 REPORTS = Path.home() / "Automation/tradingroom-digest/exports/daily/digests"
+TALKJUN_REPORTS = Path.home() / "Automation/talkjun-video-digest/exports"
 WIKI = Path.home() / ".openclaw/wiki/main"
 
 NAV = [("/", "首页"), ("/research/", "研究"), ("/privacy", "隐私")]
@@ -124,13 +126,16 @@ def doc_page(title, lede, body_html, *, back=None, eyebrow=""):
 
 
 TRADINGROOM_FNAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\.(morning|afternoon|night|day))?\.md$")
+TRADINGROOM_BRIEF_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.(morning|afternoon|night)\.brief\.md$")
 SESSION_TITLE = {
     "morning": "上午盘（06:00–12:00）",
     "afternoon": "下午盘（12:00–18:00）",
     "night": "夜盘（18:00–次日06:00）",
     "day": "日盘（06:00–18:00，旧格式）",
 }
+SESSION_SHORT = {"morning": "上午", "afternoon": "下午", "night": "夜间", "day": "全天"}
 SESSION_ORDER = {"morning": 0, "afternoon": 1, "night": 2, "day": 0, None: -1}
+CN_NUMBERS = "一二三四五六七八"
 
 
 def _chapter_summary(raw):
@@ -183,71 +188,100 @@ def build_tradingroom():
     target = OUT / "research/tradingroom"
     target.mkdir(parents=True, exist_ok=True)
 
-    by_date = {}
+    full_files = {}   # (date, session|None) -> Path
+    brief_files = {}  # (date, session) -> Path
     for f in sorted(REPORTS.glob("20*.md")):
+        m = TRADINGROOM_BRIEF_RE.match(f.name)
+        if m:
+            brief_files[(m.group(1), m.group(2))] = f
+            continue
         m = TRADINGROOM_FNAME_RE.match(f.name)
         if not m:
             continue
-        date, session = m.group(1), m.group(2)
-        by_date.setdefault(date, []).append((session, f))
+        full_files[(m.group(1), m.group(2))] = f
 
-    entries = []
-    for date in sorted(by_date, reverse=True):
-        chapters = sorted(by_date[date], key=lambda x: SESSION_ORDER[x[0]])
-        body_parts = []
-        summaries = []
-        total_len = 0
+    # 每个 (日期, session) 独立成页；session=None 的历史整天格式沿用旧的无后缀 URL。
+    pages = []  # (date, session, slug, summary, total_len)
+    for (date, session), full_f in full_files.items():
+        full_raw = full_f.read_text(encoding="utf-8")
+        brief_f = brief_files.get((date, session))
+        brief_raw = brief_f.read_text(encoding="utf-8") if brief_f else None
+
         heading = date
+        if session is None:
+            # 整天模式，标题就是文件自带的 H1（如 "2026-09-10（美西时间）"）
+            lines = full_raw.splitlines()
+            heading = lines[0].lstrip("# ").strip() if lines else date
 
-        for session, f in chapters:
-            raw = f.read_text(encoding="utf-8")
-            total_len += len(raw)
-            lines = raw.splitlines()
-            if session is None:
-                # 整天模式，标题就是文件自带的 H1（如 "2026-09-10（美西时间）"）
-                heading = lines[0].lstrip("# ").strip() if lines else date
-            summaries.append((session, _chapter_summary(raw)))
+        body_parts = []
+        if brief_raw:
+            brief_html = md_to_html(brief_raw)
+            brief_html = re.sub(r"<h1>.*?</h1>\s*", "", brief_html, count=1, flags=re.S)
+            body_parts.append(f'<h2 class="tr-session">精简版</h2>{brief_html}')
 
-            chapter_html = md_to_html(raw)
-            chapter_html = re.sub(r"<h1>.*?</h1>\s*", "", chapter_html, count=1, flags=re.S)
-            if session:
-                chapter_html = f'<h2 class="tr-session">{SESSION_TITLE[session]}</h2>' + chapter_html
-            body_parts.append(chapter_html)
+        full_html = md_to_html(full_raw)
+        full_html = re.sub(r"<h1>.*?</h1>\s*", "", full_html, count=1, flags=re.S)
+        if brief_raw:
+            body_parts.append(f'<h2 class="tr-session">详细版</h2>{full_html}')
+        else:
+            body_parts.append(full_html)
 
         body = "\n".join(body_parts)
-        # 摘要：只有一章就直接用；两章都在就各取一小段拼起来
-        if len(summaries) == 1:
-            summary = summaries[0][1]
-        else:
-            summary = " ｜ ".join(f"{SESSION_TITLE.get(s, '').split('（')[0]}: {txt}" for s, txt in summaries if txt)
+        summary = _chapter_summary(brief_raw) if brief_raw else _chapter_summary(full_raw)
 
+        slug = date if session is None else f"{date}-{session}"
+        page_title = heading if session is None else f"{date} {SESSION_TITLE.get(session, session)}"
         page = shell(
-            f"{date} · 面包 Trading Room",
+            f"{page_title} · 面包 Trading Room",
             doc_page(
-                heading if len(chapters) == 1 and chapters[0][0] is None else date,
+                page_title,
                 "",
                 body,
                 back=("/research/tradingroom/", "全部日报"),
                 eyebrow="Discord 日报",
             ),
         )
-        (target / f"{date}.html").write_text(page, encoding="utf-8")
-        entries.append((date, summary, total_len))
+        (target / f"{slug}.html").write_text(page, encoding="utf-8")
+        pages.append((date, session, slug, summary, len(full_raw) + len(brief_raw or "")))
 
-    entries.sort(key=lambda e: e[0], reverse=True)
-    rows = "".join(
-        f'<a class="row" href="/research/tradingroom/{d}">'
-        f'<span class="d">{d}</span>'
-        f'<span class="t">{html.escape(s)}</span>'
-        f'<span class="n">{n // 1000}k</span></a>'
-        for d, s, n in entries
-    )
-    dates_sorted = sorted(e[0] for e in entries)
-    span = f"{dates_sorted[0]} → {dates_sorted[-1]}" if entries else "—"
+    # index：按日期分组，同一天下面列出各 session 的独立链接
+    by_date = {}
+    for date, session, slug, summary, total_len in pages:
+        by_date.setdefault(date, []).append((session, slug, summary, total_len))
+
+    rows = []
+    for date in sorted(by_date, reverse=True):
+        chapters = sorted(by_date[date], key=lambda x: SESSION_ORDER[x[0]])
+        if len(chapters) == 1 and chapters[0][0] is None:
+            # 历史整天格式：跟以前一样，一行直接链接到当天页面
+            _, slug, summary, total_len = chapters[0]
+            rows.append(
+                f'<a class="row" href="/research/tradingroom/{slug}">'
+                f'<span class="d">{date}</span>'
+                f'<span class="t">{html.escape(summary)}</span>'
+                f'<span class="n">{total_len // 1000}k</span></a>'
+            )
+        else:
+            links = "".join(
+                f'<a class="tr-chip" href="/research/tradingroom/{slug}">{SESSION_SHORT.get(s, s)}</a>'
+                for s, slug, _, _ in chapters
+            )
+            top_summary = chapters[0][2]
+            total_len = sum(c[3] for c in chapters)
+            rows.append(
+                f'<div class="row tr-daterow">'
+                f'<span class="d">{date}</span>'
+                f'<span class="tr-chips">{links}</span>'
+                f'<span class="t">{html.escape(top_summary)}</span>'
+                f'<span class="n">{total_len // 1000}k</span></div>'
+            )
+
+    dates_sorted = sorted(by_date)
+    span = f"{dates_sorted[0]} → {dates_sorted[-1]}" if dates_sorted else "—"
     gaps = _find_gaps(dates_sorted)
     gap_note = f"{gaps} 有缺口。" if gaps else "无缺口。"
-    body = f"""<div class="rows">{rows}</div>
-<p style="color:var(--faint);font-size:.85rem">共 {len(entries)} 份日报，覆盖 {span}。{gap_note}</p>"""
+    body = f"""<div class="rows">{''.join(rows)}</div>
+<p style="color:var(--faint);font-size:.85rem">共 {len(dates_sorted)} 天日报，覆盖 {span}。{gap_note}</p>"""
 
     page = shell(
         "面包 Trading Room 日报",
@@ -257,6 +291,92 @@ def build_tradingroom():
             body,
             back=("/research/", "研究"),
             eyebrow="Discord 日报",
+        ),
+    )
+    (target / "index.html").write_text(page, encoding="utf-8")
+    return pages
+
+
+def build_talkjun():
+    target = OUT / "research/talkjun"
+    assets = target / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    entries = []
+
+    for src in sorted(TALKJUN_REPORTS.glob("*.json")):
+        exported = json.loads(src.read_text(encoding="utf-8"))
+        report = exported["report"]
+        video_id = report["video_id"]
+        parts = [
+            f"> {report['lead']}",
+            "",
+            f"[打开 YouTube 原视频]({report['source_url']})",
+        ]
+        for section_index, section in enumerate(report["sections"]):
+            parts.extend(["", f"## {CN_NUMBERS[section_index]}、{section['title']}"])
+            for item_index, item in enumerate(section["items"], 1):
+                parts.extend([
+                    "",
+                    f"### {item_index}. {item['heading']} [{item['timestamp']}]",
+                    "",
+                    item["content"],
+                ])
+        parts.extend([
+            "",
+            "## 视频最后 15 秒信息页（逐字转录）",
+            "",
+            "```text",
+            report["ending_slide_text"],
+            "```",
+        ])
+        frame = Path(exported.get("ending_frame_path", ""))
+        if frame.is_file():
+            image_name = f"{video_id}{frame.suffix.lower()}"
+            shutil.copy2(frame, assets / image_name)
+            parts.extend(["", f"![视频最后15秒原始画面](/research/talkjun/assets/{image_name})"])
+        billing = exported.get("gemini_billing_estimate", {})
+        if billing:
+            parts.extend([
+                "",
+                "---",
+                "",
+                f"Gemini 本次估算费用：${billing.get('this_call_estimated_cost_usd', 0):.4f}；"
+                f"本工具累计：${billing.get('tool_cumulative_estimated_cost_usd', 0):.4f}；"
+                f"按 $10 本地预算估算剩余：${billing.get('tool_estimated_remaining_usd', 0):.4f}。",
+                "",
+                "该余额为本工具本地估算，不是 AI Studio 实时账户余额，也不包含同账户其他调用。",
+            ])
+        body = md_to_html("\n".join(parts))
+        published = report.get("published_at", "")[:10]
+        page = shell(
+            f"{report['title']} · Talk君视频总结",
+            doc_page(
+                report["title"],
+                f"发布于 {published} · 时长 {report['duration']}",
+                body,
+                back=("/research/talkjun/", "全部 Talk君 视频"),
+                eyebrow="YouTube 视频内容总结",
+            ),
+        )
+        (target / f"{video_id}.html").write_text(page, encoding="utf-8")
+        entries.append((published, video_id, report["title"], report["lead"], report["duration"]))
+
+    entries.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    rows = "".join(
+        f'<a class="row" href="/research/talkjun/{video_id}">'
+        f'<span class="d">{html.escape(published)}</span>'
+        f'<span class="t"><strong>{html.escape(title)}</strong><br>{html.escape(lead)}</span>'
+        f'<span class="n">{html.escape(duration)}</span></a>'
+        for published, video_id, title, lead, duration in entries
+    )
+    page = shell(
+        "Talk君视频内容总结",
+        doc_page(
+            "Talk君视频内容总结",
+            "按视频讲解顺序整理，结合 YouTube 字幕、Gemini 原生视频理解与末页原图校对。",
+            f'<div class="rows">{rows}</div>',
+            back=("/research/", "研究"),
+            eyebrow="YouTube Digest",
         ),
     )
     (target / "index.html").write_text(page, encoding="utf-8")
@@ -331,7 +451,7 @@ def build_companies():
     return entries
 
 
-def build_research_index(n_reports, n_companies):
+def build_research_index(n_reports, n_companies, n_talkjun):
     tiles = f"""<div class="deck">
   <a class="tile" href="/research/companies/">
     <span class="k">公司研究</span>
@@ -349,6 +469,12 @@ def build_research_index(n_reports, n_companies):
     <span class="k">Discord 日报</span>
     <h3>面包 Trading Room</h3>
     <p>群内四人观点逐日整理，标注本人发言还是转述。共 {n_reports} 份。</p>
+    <span class="go">打开 →</span>
+  </a>
+  <a class="tile" href="/research/talkjun/">
+    <span class="k">YouTube 总结</span>
+    <h3>Talk君视频内容总结</h3>
+    <p>按照视频讲解顺序整理，保留关键数字、论证路径、操作思路与末页原文。已收录 {n_talkjun} 期。</p>
     <span class="go">打开 →</span>
   </a>
 </div>"""
@@ -380,6 +506,7 @@ def main():
 
     entries = build_tradingroom()
     company_entries = build_companies()
+    talkjun_entries = build_talkjun()
 
     build_markdown_page(
         SITE / "content/frank.md",
@@ -390,8 +517,8 @@ def main():
         ("/research/", "研究"),
     )
 
-    build_research_index(len(entries), len(company_entries))
-    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + frank + indexes → {OUT}")
+    build_research_index(len(entries), len(company_entries), len(talkjun_entries))
+    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + {len(talkjun_entries)} TalkJun pages + frank + indexes → {OUT}")
 
 
 if __name__ == "__main__":

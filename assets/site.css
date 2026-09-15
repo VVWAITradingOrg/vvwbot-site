@@ -474,6 +474,19 @@ body {
   white-space: nowrap;
   flex: none;
 }
+.tr-chips { display: flex; gap: 6px; flex: none; }
+.tr-chip {
+  font-size: .78rem;
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  padding: 3px 11px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .16s ease, color .16s ease;
+}
+.tr-chip:hover { background: var(--panel-hi); color: var(--ink); }
 
 /* abstract card — sits at the top of every long-form research page */
 .abstract {
