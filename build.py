@@ -305,35 +305,53 @@ def build_talkjun():
 
     for src in sorted(TALKJUN_REPORTS.glob("*.json")):
         exported = json.loads(src.read_text(encoding="utf-8"))
-        report = exported["report"]
+        stage = exported.get("stage", "calibrated")
+        report = exported.get("report") or exported.get("record")
         video_id = report["video_id"]
-        parts = [
-            f"> {report['lead']}",
-            "",
-            f"[打开 YouTube 原视频]({report['source_url']})",
-        ]
-        for section_index, section in enumerate(report["sections"]):
-            parts.extend(["", f"## {CN_NUMBERS[section_index]}、{section['title']}"])
-            for item_index, item in enumerate(section["items"], 1):
-                parts.extend([
-                    "",
-                    f"### {item_index}. {item['heading']} [{item['timestamp']}]",
-                    "",
-                    item["content"],
-                ])
-        parts.extend([
-            "",
-            "## 视频最后 15 秒信息页（逐字转录）",
-            "",
-            "```text",
-            report["ending_slide_text"],
-            "```",
-        ])
+        preliminary_text = exported.get("preliminary_text", "").strip()
+        if stage == "preliminary":
+            lead = "Gemini 视频初版。中文字幕出现后会发布字幕校准版。"
+            parts = [
+                "> 本版直接依据 Gemini 对 YouTube 视频的理解生成；中文字幕出现后会发布校准版。",
+                "",
+                f"[打开 YouTube 原视频]({report['source_url']})",
+                "",
+                preliminary_text,
+            ]
+        else:
+            lead = report["lead"]
+            parts = [
+                f"> {lead}",
+                "",
+                f"[打开 YouTube 原视频]({report['source_url']})",
+            ]
+            for section_index, section in enumerate(report["sections"]):
+                parts.extend(["", f"## {CN_NUMBERS[section_index]}、{section['title']}"])
+                for item_index, item in enumerate(section["items"], 1):
+                    parts.extend([
+                        "",
+                        f"### {item_index}. {item['heading']} [{item['timestamp']}]",
+                        "",
+                        item["content"],
+                    ])
+            parts.extend([
+                "",
+                "## 视频最后 15 秒信息页（逐字转录）",
+                "",
+                "```text",
+                report["ending_slide_text"],
+                "```",
+            ])
         frame = Path(exported.get("ending_frame_path", ""))
         if frame.is_file():
             image_name = f"{video_id}{frame.suffix.lower()}"
             shutil.copy2(frame, assets / image_name)
             parts.extend(["", f"![视频最后15秒原始画面](/research/talkjun/assets/{image_name})"])
+        if stage == "calibrated" and preliminary_text:
+            parts.extend([
+                "", "<details><summary>查看此前 Gemini 初版</summary>", "",
+                preliminary_text, "", "</details>",
+            ])
         billing = exported.get("gemini_billing_estimate", {})
         if billing:
             parts.extend([
@@ -348,10 +366,11 @@ def build_talkjun():
             ])
         body = md_to_html("\n".join(parts))
         published = report.get("published_at", "")[:10]
+        version_label = "Gemini初版｜待字幕校准" if stage == "preliminary" else "字幕校准版"
         page = shell(
-            f"{report['title']} · Talk君视频总结",
+            f"{report['title']} · {version_label} · Talk君视频总结",
             doc_page(
-                report["title"],
+                f"{report['title']}（{version_label}）",
                 f"发布于 {published} · 时长 {report['duration']}",
                 body,
                 back=("/research/talkjun/", "全部 Talk君 视频"),
@@ -359,21 +378,21 @@ def build_talkjun():
             ),
         )
         (target / f"{video_id}.html").write_text(page, encoding="utf-8")
-        entries.append((published, video_id, report["title"], report["lead"], report["duration"]))
+        entries.append((published, video_id, report["title"], lead, report["duration"], version_label))
 
     entries.sort(key=lambda item: (item[0], item[1]), reverse=True)
     rows = "".join(
         f'<a class="row" href="/research/talkjun/{video_id}">'
         f'<span class="d">{html.escape(published)}</span>'
-        f'<span class="t"><strong>{html.escape(title)}</strong><br>{html.escape(lead)}</span>'
+        f'<span class="t"><strong>{html.escape(title)}（{html.escape(version_label)}）</strong><br>{html.escape(lead)}</span>'
         f'<span class="n">{html.escape(duration)}</span></a>'
-        for published, video_id, title, lead, duration in entries
+        for published, video_id, title, lead, duration, version_label in entries
     )
     page = shell(
         "Talk君视频内容总结",
         doc_page(
             "Talk君视频内容总结",
-            "按视频讲解顺序整理，结合 YouTube 字幕、Gemini 原生视频理解与末页原图校对。",
+            "新视频先发布 Gemini 初版；中文字幕出现后，再发布结合字幕和末页原图的校准版。",
             f'<div class="rows">{rows}</div>',
             back=("/research/", "研究"),
             eyebrow="YouTube Digest",
