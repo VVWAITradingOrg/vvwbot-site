@@ -13,6 +13,10 @@ import markdown
 SITE = Path(__file__).resolve().parent
 OUT = SITE / "dist"
 REPORTS = Path.home() / "Automation/tradingroom-digest/exports/daily/digests"
+TRADING_METHODOLOGY = (
+    Path.home()
+    / "Automation/tradingroom-digest/docs/solo-gulu-bread-trading-methodology.md"
+)
 TALKJUN_REPORTS = Path.home() / "Automation/talkjun-video-digest/exports"
 WIKI = Path.home() / ".openclaw/wiki/main"
 
@@ -484,6 +488,12 @@ def build_research_index(n_reports, n_companies, n_talkjun):
     <p>51 篇周报逐条对账真实行情。周度命中 71%，alpha 只有一周长，防守强于进攻。</p>
     <span class="go">打开 →</span>
   </a>
+  <a class="tile" href="/research/trading-methodology">
+    <span class="k">交易方法论</span>
+    <h3>Solo、Gulu 与面包</h3>
+    <p>从约万条群聊中提炼三人的交易方法、风控心得和真实错误，并融合成可执行的个人交易流程。</p>
+    <span class="go">打开 →</span>
+  </a>
   <a class="tile" href="/research/tradingroom/">
     <span class="k">Discord 日报</span>
     <h3>面包 Trading Room</h3>
@@ -536,8 +546,17 @@ def main():
         ("/research/", "研究"),
     )
 
+    build_markdown_page(
+        TRADING_METHODOLOGY,
+        "research/trading-methodology.html",
+        "Solo、Gulu 与面包的交易方法论",
+        "从群聊实盘中提炼三人的交易方法、风控经验和公开错误，并组合成一套可执行的个人交易流程。",
+        "群聊交易画像 · 方法与错误复盘",
+        ("/research/", "研究"),
+    )
+
     build_research_index(len(entries), len(company_entries), len(talkjun_entries))
-    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + {len(talkjun_entries)} TalkJun pages + frank + indexes → {OUT}")
+    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + {len(talkjun_entries)} TalkJun pages + frank + trading methodology + indexes → {OUT}")
 
 
 if __name__ == "__main__":
