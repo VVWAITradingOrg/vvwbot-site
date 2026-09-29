@@ -19,6 +19,7 @@ TRADING_METHODOLOGY = (
 )
 TALKJUN_REPORTS = Path.home() / "Automation/talkjun-video-digest/exports"
 WIKI = Path.home() / ".openclaw/wiki/main"
+DRAWDOWN_ATLAS = Path.home() / "Documents/sp500-drawdown-atlas/index.html"
 
 NAV = [("/", "首页"), ("/research/", "研究"), ("/privacy", "隐私")]
 
@@ -476,6 +477,12 @@ def build_companies():
 
 def build_research_index(n_reports, n_companies, n_talkjun):
     tiles = f"""<div class="deck">
+  <a class="tile" href="/research/sp500-drawdowns/">
+    <span class="k">市场历史 · 交互图谱</span>
+    <h3>标普 500 大跌图谱</h3>
+    <p>2016 年以来 34 段累计至少 5% 的下跌，折线图逐段标记原因与来源；可聚焦 2023 年 8–10 月回撤。</p>
+    <span class="go">打开 →</span>
+  </a>
   <a class="tile" href="/research/companies/">
     <span class="k">公司研究</span>
     <h3>个股拆解</h3>
@@ -525,6 +532,8 @@ def build_research_index(n_reports, n_companies, n_talkjun):
 
 
 def main():
+    if not DRAWDOWN_ATLAS.is_file():
+        raise FileNotFoundError(f"Drawdown atlas page is missing: {DRAWDOWN_ATLAS}")
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
@@ -556,7 +565,10 @@ def main():
     )
 
     build_research_index(len(entries), len(company_entries), len(talkjun_entries))
-    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + {len(talkjun_entries)} TalkJun pages + frank + trading methodology + indexes → {OUT}")
+    atlas_target = OUT / "research/sp500-drawdowns/index.html"
+    atlas_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(DRAWDOWN_ATLAS, atlas_target)
+    print(f"built {len(entries)} tradingroom pages + {len(company_entries)} company pages + {len(talkjun_entries)} TalkJun pages + frank + trading methodology + drawdown atlas + indexes → {OUT}")
 
 
 if __name__ == "__main__":
